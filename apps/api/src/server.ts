@@ -1,4 +1,7 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+import { extractJobDescription } from "@prepkit/core";
+import { generateWithGemini } from "./services/llm/gemini-provider.js";
+import { fileURLToPath } from "node:url";
 
 import express from "express";
 import cors from "cors";
@@ -6,6 +9,9 @@ import helmet from "helmet";
 
 import { InterviewKitSchema } from "@prepkit/core";
 
+dotenv.config({
+  path: fileURLToPath(new URL("../../../.env", import.meta.url))
+});
 
 const app = express();
 
@@ -83,6 +89,40 @@ app.post("/api/kits/validate", (req, res) => {
 
   });
 
+});
+
+
+// ----------------------------------
+// Extract Job Description
+// ----------------------------------
+
+app.post("/api/kits/extract-role", (req, res) => {
+  const { jd } = req.body;
+
+  // Validate input
+  if (typeof jd !== "string" || !jd.trim()) {
+    return res.status(400).json({
+      error: "INVALID_INPUT",
+      message: "A non-empty job description is required."
+    });
+  }
+
+  // Run the extraction pipeline
+  void extractJobDescription(jd, generateWithGemini)
+    .then(role => {
+      return res.status(200).json({
+        success: true,
+        role
+      });
+    })
+    .catch(error => {
+      console.error("JD extraction failed:", error);
+
+      return res.status(502).json({
+        error: "EXTRACTION_FAILED",
+        message: "Failed to extract job description."
+      });
+    });
 });
 
 
