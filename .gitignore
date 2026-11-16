@@ -2,6 +2,7 @@ node_modules/
 dist/
 .next/
 coverage/
+research-result.json
 
 .env
 .env.local
