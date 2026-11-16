@@ -68,6 +68,7 @@ function getGeminiClient(): GoogleGenAI {
 export const generateWithGemini: JsonGenerator = async ({
   systemPrompt,
   userPrompt,
+  responseSchema
 }) => {
   const model = process.env.LLM_MODEL?.trim() || DEFAULT_MODEL;
 
@@ -77,7 +78,9 @@ export const generateWithGemini: JsonGenerator = async ({
     config: {
       systemInstruction: systemPrompt,
       responseMimeType: "application/json",
-      responseJsonSchema: JD_EXTRACTION_RESPONSE_SCHEMA,
+      responseJsonSchema: (
+        responseSchema ?? JD_EXTRACTION_RESPONSE_SCHEMA
+      ) as typeof JD_EXTRACTION_RESPONSE_SCHEMA,
       maxOutputTokens: 4096,
     },
   });

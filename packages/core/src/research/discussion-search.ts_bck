@@ -1,0 +1,536 @@
+
+export type DiscussionSourceType =
+  | "reddit"
+  | "forum"
+  | "review_site"
+  | "blog"
+  | "other";
+
+export type DiscussionSearchStatus =
+  | "completed"
+  | "partial"
+  | "unavailable";
+
+export interface SearchProviderResult {
+  title: string;
+  url: string;
+  snippet?: string;
+  publishedAt?: string;
+}
+
+export interface SearchProvider {
+  name: string;
+
+  search(input: {
+    query: string;
+    limit: number;
+  }): Promise<SearchProviderResult[]>;
+}
+
+export interface CompanyDiscussion {
+  title: string;
+  url: string;
+  domain: string;
+  snippet?: string;
+  publishedAt?: string;
+  sourceType: DiscussionSourceType;
+  provider: string;
+  matchedQueries: string[];
+}
+
+export interface SearchFailure {
+  query: string;
+  error: string;
+}
+
+export interface DiscussionSearchReport {
+  company: string;
+  role: string;
+  searchedAt: string;
+  status: DiscussionSearchStatus;
+  queries: string[];
+  results: CompanyDiscussion[];
+  failures: SearchFailure[];
+}
+
+export interface DiscussionSearchOptions {
+  maxResultsPerQuery?: number;
+  maxTotalResults?: number;
+  maxRetries?: number;
+  baseDelayMs?: number;
+  delayBetweenQueriesMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+const DEFAULT_RESULTS_PER_QUERY = 5;
+const DEFAULT_MAX_RESULTS = 20;
+const DEFAULT_RETRIES = 2;
+const DEFAULT_BASE_DELAY_MS = 1000;
+const DEFAULT_QUERY_DELAY_MS = 500;
+
+function normalizeSearchTerm(value: string): string {
+  return value
+    .replace(/["\r\n]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const STOP_WORDS = new Set([
+  "a", "an", "and", "are", "as", "at", "be", "by",
+  "for", "from", "in", "into", "is", "it", "of",
+  "on", "or", "the", "to", "with", "years", "year",
+  "experience", "experienced", "knowledge", "strong",
+  "good", "working", "work", "using", "use"
+]);
+
+function tokenize(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9+#.]/g, " ")
+    .split(/\s+/)
+    .filter(token => token.length > 1 && !STOP_WORDS.has(token));
+}
+
+function containsToken(text: string, token: string): boolean {
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  return new RegExp(
+    `(^|[^a-z0-9])${escaped}($|[^a-z0-9])`,
+    "i"
+  ).test(text);
+}
+
+function calculateRelevanceScore(
+  result: SearchProviderResult,
+  role: string,
+  requirements: string[]
+): number {
+  const title = result.title ?? "";
+  const snippet = result.snippet ?? "";
+  const url = result.url ?? "";
+
+  const titleText = title.toLowerCase();
+  const combinedText = `${title} ${snippet} ${url}`.toLowerCase();
+
+  let score = 0;
+
+  // Exact role phrase match.
+  if (titleText.includes(role.toLowerCase())) {
+    score += 10;
+  } else if (combinedText.includes(role.toLowerCase())) {
+    score += 6;
+  }
+
+  // Individual role keyword matches.
+  const roleTokens = [...new Set(tokenize(role))];
+
+  for (const token of roleTokens) {
+    if (containsToken(titleText, token)) {
+      score += 3;
+    } else if (containsToken(combinedText, token)) {
+      score += 1;
+    }
+  }
+
+  // Match extracted JD requirements.
+  for (const requirement of requirements) {
+    const normalizedRequirement = requirement.toLowerCase();
+
+    if (titleText.includes(normalizedRequirement)) {
+      score += 4;
+      continue;
+    }
+
+    if (combinedText.includes(normalizedRequirement)) {
+      score += 2;
+      continue;
+    }
+
+    const requirementTokens = [
+      ...new Set(tokenize(requirement))
+    ];
+
+    const matchingTokens = requirementTokens.filter(token =>
+      containsToken(combinedText, token)
+    );
+
+    if (
+      requirementTokens.length > 0 &&
+      matchingTokens.length / requirementTokens.length >= 0.5
+    ) {
+      score += Math.min(
+        2,
+        (matchingTokens.length / requirementTokens.length) * 2
+      );
+    }
+  }
+
+  // General interview experiences are still useful.
+  if (
+    /interview|hiring process|interview experience|technical round/i.test(
+      `${title} ${snippet}`
+    )
+  ) {
+    score += 2;
+  }
+
+  return score;
+}
+
+export function buildDiscussionQueries(
+  company: string,
+  role: string
+): string[] {
+  const companyName = normalizeSearchTerm(company);
+  const roleName = normalizeSearchTerm(role);
+
+  if (!companyName || !roleName) {
+    throw new Error("Company name and role are required.");
+  }
+
+  return [
+    `"${companyName}" "${roleName}" interview experience`,
+    `"${companyName}" interview process hiring`,
+    `site:reddit.com "${companyName}" interview experience`,
+    `site:teamblind.com "${companyName}" interview`,
+    `site:glassdoor.com "${companyName}" interview experience`,
+    `site:fishbowlapp.com "${companyName}" interview`
+  ];
+}
+
+function normalizeUrl(input: string): URL | null {
+  try {
+    const url = new URL(input);
+
+    if (
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.username ||
+      url.password
+    ) {
+      return null;
+    }
+
+    url.hash = "";
+
+    // Remove common tracking parameters.
+    for (const key of [...url.searchParams.keys()]) {
+      if (
+        key.toLowerCase().startsWith("utm_") ||
+        ["fbclid", "gclid", "ref", "source"].includes(
+          key.toLowerCase()
+        )
+      ) {
+        url.searchParams.delete(key);
+      }
+    }
+
+    url.searchParams.sort();
+
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+function classifySource(domain: string): DiscussionSourceType {
+  if (
+    domain === "reddit.com" ||
+    domain.endsWith(".reddit.com")
+  ) {
+    return "reddit";
+  }
+
+  if (
+    domain === "teamblind.com" ||
+    domain.endsWith(".teamblind.com")
+  ) {
+    return "forum";
+  }
+
+  if (
+    domain === "glassdoor.com" ||
+    domain.endsWith(".glassdoor.com") ||
+    domain === "fishbowlapp.com" ||
+    domain.endsWith(".fishbowlapp.com")
+  ) {
+    return "review_site";
+  }
+
+  if (
+    domain === "medium.com" ||
+    domain.endsWith(".medium.com") ||
+    domain === "dev.to" ||
+    domain === "substack.com" ||
+    domain.endsWith(".substack.com")
+  ) {
+    return "blog";
+  }
+
+  return "other";
+}
+
+function normalizePublishedAt(
+  value?: string
+): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const timestamp = Date.parse(value);
+
+  if (Number.isNaN(timestamp)) {
+    return undefined;
+  }
+
+  return new Date(timestamp).toISOString();
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message.slice(0, 300);
+  }
+
+  return "Unknown search provider error.";
+}
+
+function isRetryableError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  const details = error as {
+    status?: unknown;
+    statusCode?: unknown;
+    code?: unknown;
+  };
+
+  const status = Number(details.status ?? details.statusCode);
+
+  if (status === 429 || status >= 500) {
+    return true;
+  }
+
+  const retryableCodes = [
+    "ECONNRESET",
+    "ETIMEDOUT",
+    "EAI_AGAIN"
+  ];
+
+  return retryableCodes.includes(String(details.code));
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function boundedInteger(
+  value: number | undefined,
+  fallback: number,
+  min: number,
+  max: number
+): number {
+  if (value === undefined || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, Math.floor(value)));
+}
+
+async function searchWithRetry(
+  provider: SearchProvider,
+  query: string,
+  limit: number,
+  maxRetries: number,
+  baseDelayMs: number,
+  sleep: (ms: number) => Promise<void>
+): Promise<SearchProviderResult[]> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await provider.search({
+        query,
+        limit
+      });
+    } catch (error) {
+      lastError = error;
+
+      if (
+        attempt === maxRetries ||
+        !isRetryableError(error)
+      ) {
+        break;
+      }
+
+      await sleep(baseDelayMs * 2 ** attempt);
+    }
+  }
+
+  throw lastError;
+}
+
+export async function searchCompanyDiscussions(
+  input: {
+    company: string;
+    role: string;
+    requirements?: string[];
+  },
+  provider: SearchProvider,
+  options: DiscussionSearchOptions = {}
+): Promise<DiscussionSearchReport> {
+  const company = normalizeSearchTerm(input.company);
+  const role = normalizeSearchTerm(input.role);
+  const requirements = (input.requirements ?? [])
+      .map(normalizeSearchTerm)
+      .filter(Boolean)
+      .slice(0, 30);
+
+  const queries = buildDiscussionQueries(company, role);
+
+  const maxResultsPerQuery = boundedInteger(
+    options.maxResultsPerQuery,
+    DEFAULT_RESULTS_PER_QUERY,
+    1,
+    10
+  );
+
+  const maxTotalResults = boundedInteger(
+    options.maxTotalResults,
+    DEFAULT_MAX_RESULTS,
+    1,
+    100
+  );
+
+  const maxRetries = boundedInteger(
+    options.maxRetries,
+    DEFAULT_RETRIES,
+    0,
+    5
+  );
+
+  const baseDelayMs = boundedInteger(
+    options.baseDelayMs,
+    DEFAULT_BASE_DELAY_MS,
+    100,
+    10000
+  );
+
+  const queryDelayMs = boundedInteger(
+    options.delayBetweenQueriesMs,
+    DEFAULT_QUERY_DELAY_MS,
+    0,
+    10000
+  );
+
+  const sleep = options.sleep ?? defaultSleep;
+
+  const resultsByUrl = new Map<string, CompanyDiscussion>();
+  const failures: SearchFailure[] = [];
+
+  for (let index = 0; index < queries.length; index++) {
+    const query = queries[index];
+
+    try {
+      const providerResults = await searchWithRetry(
+        provider,
+        query,
+        maxResultsPerQuery,
+        maxRetries,
+        baseDelayMs,
+        sleep
+      );
+
+      for (const item of providerResults) {
+        const url = normalizeUrl(item.url);
+
+        if (!url) {
+          continue;
+        }
+
+        const normalizedUrl = url.toString();
+        const domain = url.hostname
+          .toLowerCase()
+          .replace(/^www\./, "");
+
+        const title = item.title?.trim() || domain;
+
+        const existing = resultsByUrl.get(normalizedUrl);
+
+        if (existing) {
+          if (!existing.snippet && item.snippet) {
+            existing.snippet = item.snippet.slice(0, 1200);
+          }
+
+          if (!existing.publishedAt) {
+            existing.publishedAt = normalizePublishedAt(
+              item.publishedAt
+            );
+          }
+
+          if (!existing.matchedQueries.includes(query)) {
+            existing.matchedQueries.push(query);
+          }
+
+          continue;
+        }
+
+        resultsByUrl.set(normalizedUrl, {
+          title: title.slice(0, 300),
+          url: normalizedUrl,
+          domain,
+          snippet: item.snippet?.slice(0, 1200),
+          publishedAt: normalizePublishedAt(item.publishedAt),
+          sourceType: classifySource(domain),
+          provider: provider.name,
+          matchedQueries: [query]
+        });
+      }
+    } catch (error) {
+      failures.push({
+        query,
+        error: getErrorMessage(error)
+      });
+    }
+
+    // Rate-limit requests between individual searches.
+    if (index < queries.length - 1 && queryDelayMs > 0) {
+      await sleep(queryDelayMs);
+    }
+  }
+
+    const allResults = [...resultsByUrl.values()];
+
+    const rankedResults = allResults
+    .map(result => ({
+      result,
+      score: calculateRelevanceScore(
+        {
+          title: result.title,
+          url: result.url,
+          snippet: result.snippet
+        },
+        role,
+        requirements
+      )
+     }))
+    .sort((a, b) => b.score - a.score)
+    .map(item => item.result);
+
+  let status: DiscussionSearchStatus = "completed";
+
+  if (failures.length === queries.length) {
+    status = "unavailable";
+  } else if (failures.length > 0) {
+    status = "partial";
+  }
+
+  return {
+    company,
+    role,
+    searchedAt: new Date().toISOString(),
+    status,
+    queries,
+    results: rankedResults.slice(0, maxTotalResults),
+    failures
+  };
+}

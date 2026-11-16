@@ -1,13 +1,20 @@
 import dotenv from "dotenv";
-import { extractJobDescription } from "@prepkit/core";
 import { generateWithGemini } from "./services/llm/gemini-provider.js";
 import { fileURLToPath } from "node:url";
+import { createTavilySearchProvider } from "./services/search/tavily-provider.js";
 
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 
-import { InterviewKitSchema } from "@prepkit/core";
+import {
+  extractJobDescription,
+  searchCompanyDiscussions,
+  runResearchPipeline,
+  createResearchServiceDependencies,
+  RunResearchInputSchema,
+  InterviewKitSchema
+} from "@prepkit/core";
 
 dotenv.config({
   path: fileURLToPath(new URL("../../../.env", import.meta.url))
@@ -16,6 +23,8 @@ dotenv.config({
 const app = express();
 
 const PORT = Number(process.env.PORT ?? 4000);
+
+const tavilySearchProvider = createTavilySearchProvider();
 
 const FRONTEND_ORIGIN =
   process.env.FRONTEND_ORIGIN ??
@@ -125,7 +134,95 @@ app.post("/api/kits/extract-role", (req, res) => {
     });
 });
 
+// ----------------------------------
+// Search Company Interview Discussions
+// ----------------------------------
 
+app.post("/api/research/discussions", async (req, res) => {
+  const { company, role } = req.body ?? {};
+
+  // Validate input
+  if (
+    typeof company !== "string" ||
+    !company.trim() ||
+    company.trim().length > 100 ||
+    typeof role !== "string" ||
+    !role.trim() ||
+    role.trim().length > 100
+  ) {
+    return res.status(400).json({
+      error: "INVALID_INPUT",
+      message: "A valid company name and role are required."
+    });
+  }
+
+  try {
+    const report = await searchCompanyDiscussions(
+      {
+        company: company.trim(),
+        role: role.trim()
+      },
+      tavilySearchProvider
+    );
+
+    return res.status(200).json({
+      success: true,
+      report
+    });
+
+  } catch (error) {
+    console.error("Company discussion search failed:", error);
+
+    return res.status(500).json({
+      error: "DISCUSSION_SEARCH_FAILED",
+      message: "Failed to search company discussions."
+    });
+  }
+});
+
+// ----------------------------------
+// Run Complete Research Pipeline
+// ----------------------------------
+
+app.post("/api/kits/research", async (req, res) => {
+  const validation = RunResearchInputSchema.safeParse(req.body);
+
+  if (!validation.success) {
+    return res.status(400).json({
+      success: false,
+      error: "INVALID_INPUT",
+      details: validation.error.flatten()
+    });
+  }
+
+  try {
+    const dependencies = createResearchServiceDependencies(
+      generateWithGemini,
+      tavilySearchProvider
+    );
+
+    const result = await runResearchPipeline(
+      validation.data,
+      dependencies
+    );
+
+    return res.status(200).json({
+      success: true,
+      ...result
+    });
+
+  } catch (error) {
+    console.error("Research pipeline failed:", error);
+
+    return res.status(502).json({
+      success: false,
+      error: "RESEARCH_PIPELINE_FAILED",
+      message: error instanceof Error
+        ? error.message
+        : "Research pipeline failed."
+    });
+  }
+});
 // ----------------------------------
 // 404 Handler
 // ----------------------------------

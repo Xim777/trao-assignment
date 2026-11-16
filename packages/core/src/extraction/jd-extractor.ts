@@ -33,6 +33,7 @@ export type ExtractedRole = z.infer<typeof ExtractedRoleSchema>;
 export type JsonGenerator = (input: {
   systemPrompt: string;
   userPrompt: string;
+  responseSchema?: Record <string, unknown>;
 }) => Promise<unknown>;
 
 const SYSTEM_PROMPT = `

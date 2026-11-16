@@ -1,0 +1,296 @@
+
+import { describe, expect, it, vi } from "vitest";
+
+import {
+  buildDiscussionQueries,
+  searchCompanyDiscussions,
+  type SearchProvider,
+  type SearchProviderResult
+} from "./discussion-search.js";
+
+const noDelay = {
+  delayBetweenQueriesMs: 0,
+  sleep: async (_ms: number) => {}
+};
+
+function createProvider(
+  search: SearchProvider["search"]
+): SearchProvider {
+  return {
+    name: "test-provider",
+    search
+  };
+}
+
+describe("buildDiscussionQueries", () => {
+  it("generates targeted company interview queries", () => {
+    const queries = buildDiscussionQueries(
+      "Google",
+      "Backend Engineer"
+    );
+
+    expect(queries).toHaveLength(6);
+
+    expect(queries[0]).toContain("Google");
+    expect(queries[0]).toContain("Backend Engineer");
+
+    expect(queries.some(query =>
+      query.includes("site:reddit.com")
+    )).toBe(true);
+
+    expect(queries.some(query =>
+      query.includes("site:glassdoor.com")
+    )).toBe(true);
+
+    expect(queries.some(query =>
+      query.includes("site:teamblind.com")
+    )).toBe(true);
+  });
+
+  it.each([
+    ["", "Backend Engineer"],
+    ["Google", ""]
+  ])(
+    "rejects missing company or role",
+    (company, role) => {
+      expect(() =>
+        buildDiscussionQueries(company, role)
+      ).toThrow("Company name and role are required.");
+    }
+  );
+});
+
+describe("searchCompanyDiscussions", () => {
+  it("normalizes URLs and classifies sources", async () => {
+    const results: SearchProviderResult[] = [
+      {
+        title: " Google Interview Experience ",
+        url: "https://www.reddit.com/r/cscareerquestions/comments/12345/?utm_source=test",
+        snippet: "My interview experience",
+        publishedAt: "2025-01-01"
+      },
+      {
+        title: "Invalid URL",
+        url: "javascript:alert(1)"
+      },
+      {
+        title: "Unsupported protocol",
+        url: "ftp://example.com/file"
+      }
+    ];
+
+    let calls = 0;
+
+    const provider = createProvider(async () => {
+      calls++;
+      return calls === 1 ? results : [];
+    });
+
+    const report = await searchCompanyDiscussions(
+      {
+        company: "Google",
+        role: "Backend Engineer"
+      },
+      provider,
+      noDelay
+    );
+
+    expect(report.status).toBe("completed");
+    expect(report.results).toHaveLength(1);
+
+    expect(report.results[0]).toMatchObject({
+      title: "Google Interview Experience",
+      domain: "reddit.com",
+      sourceType: "reddit",
+      snippet: "My interview experience",
+      publishedAt: "2025-01-01T00:00:00.000Z"
+    });
+
+    expect(report.results[0].url).not.toContain("utm_source");
+  });
+
+  it("deduplicates identical URLs and tracks matched queries", async () => {
+    let calls = 0;
+
+    const provider = createProvider(async () => {
+      calls++;
+
+      if (calls === 1) {
+        return [{
+          title: "Interview Experience",
+          url: "https://www.reddit.com/r/jobs/123/?utm_source=test",
+          snippet: "First result"
+        }];
+      }
+
+      if (calls === 2) {
+        return [{
+          title: "Interview Experience",
+          url: "https://www.reddit.com/r/jobs/123/",
+          snippet: "Duplicate result"
+        }];
+      }
+
+      return [];
+    });
+
+    const report = await searchCompanyDiscussions(
+      {
+        company: "Google",
+        role: "Software Engineer"
+      },
+      provider,
+      noDelay
+    );
+
+    expect(report.results).toHaveLength(1);
+    expect(report.results[0].matchedQueries).toHaveLength(2);
+    expect(report.results[0].snippet).toBe("First result");
+  });
+
+  it("retries temporary failures with exponential backoff", async () => {
+    let calls = 0;
+
+    const sleep = vi.fn(async (_ms: number) => {});
+
+    const provider = createProvider(async () => {
+      calls++;
+
+      if (calls <= 2) {
+        throw Object.assign(
+          new Error("Temporary server failure"),
+          { status: 503 }
+        );
+      }
+
+      return [];
+    });
+
+    const report = await searchCompanyDiscussions(
+      {
+        company: "Google",
+        role: "Backend Engineer"
+      },
+      provider,
+      {
+        maxRetries: 2,
+        baseDelayMs: 100,
+        delayBetweenQueriesMs: 0,
+        sleep
+      }
+    );
+
+    // First query: 3 attempts.
+    // Remaining 5 queries: 1 attempt each.
+    expect(calls).toBe(8);
+
+    expect(sleep).toHaveBeenNthCalledWith(1, 100);
+    expect(sleep).toHaveBeenNthCalledWith(2, 200);
+
+    expect(report.status).toBe("completed");
+  });
+
+  it("continues searching when one query fails", async () => {
+    let calls = 0;
+
+    const provider = createProvider(async () => {
+      calls++;
+
+      if (calls === 1) {
+        throw new Error("Invalid search request");
+      }
+
+      return [{
+        title: "Interview Experience",
+        url: "https://www.reddit.com/r/jobs/123/"
+      }];
+    });
+
+    const report = await searchCompanyDiscussions(
+      {
+        company: "Google",
+        role: "Backend Engineer"
+      },
+      provider,
+      {
+        ...noDelay,
+        maxRetries: 3
+      }
+    );
+
+    expect(calls).toBe(6);
+    expect(report.status).toBe("partial");
+    expect(report.failures).toHaveLength(1);
+    expect(report.results.length).toBeGreaterThan(0);
+  });
+
+  it("returns unavailable when every query fails", async () => {
+    const provider = createProvider(async () => {
+      throw new Error("Search service unavailable");
+    });
+
+    const report = await searchCompanyDiscussions(
+      {
+        company: "Google",
+        role: "Backend Engineer"
+      },
+      provider,
+      {
+        ...noDelay,
+        maxRetries: 0
+      }
+    );
+
+    expect(report.status).toBe("unavailable");
+    expect(report.results).toHaveLength(0);
+    expect(report.failures).toHaveLength(6);
+  });
+
+  it("respects the maximum total result limit", async () => {
+    const provider = createProvider(async ({ query }) => [
+      {
+        title: `Result 1 - ${query}`,
+        url: `https://example.com/${encodeURIComponent(query)}/1`
+      },
+      {
+        title: `Result 2 - ${query}`,
+        url: `https://example.com/${encodeURIComponent(query)}/2`
+      },
+      {
+        title: `Result 3 - ${query}`,
+        url: `https://example.com/${encodeURIComponent(query)}/3`
+      }
+    ]);
+
+    const report = await searchCompanyDiscussions(
+      {
+        company: "Google",
+        role: "Backend Engineer"
+      },
+      provider,
+      {
+        ...noDelay,
+        maxTotalResults: 2
+      }
+    );
+
+    expect(report.results).toHaveLength(2);
+  });
+
+  it("returns completed when searches succeed but find no results", async () => {
+    const provider = createProvider(async () => []);
+
+    const report = await searchCompanyDiscussions(
+      {
+        company: "Google",
+        role: "Backend Engineer"
+      },
+      provider,
+      noDelay
+    );
+
+    expect(report.status).toBe("completed");
+    expect(report.results).toHaveLength(0);
+    expect(report.failures).toHaveLength(0);
+  });
+});
