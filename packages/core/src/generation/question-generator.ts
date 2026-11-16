@@ -1,4 +1,3 @@
-
 import { z } from "zod";
 import type { JsonGenerator } from "../extraction/jd-extractor.js";
 import type { InterviewKit } from "../schemas/interview-kit.js";
@@ -166,11 +165,11 @@ export async function generateQuestionBank(
   }
 
   const questionsByPrompt = new Map<
-   string,
-   {
-        category: QuestionCategory;
-        draft: z.infer<typeof DraftQuestionSchema>;
-   }
+    string,
+    {
+      category: QuestionCategory;
+      draft: z.infer<typeof DraftQuestionSchema>;
+    }
   >();
 
   async function generateForCategories(
@@ -200,7 +199,7 @@ export async function generateQuestionBank(
 
     for (const categoryResults of results) {
       for (const item of categoryResults) {
-        // Reject references that were not supplied to the model.
+        // Ignore model output that refers to requirements not supplied to it.
         if (
           item.draft.requirement_ids.some(
             id => !requirementIds.has(id)
@@ -213,13 +212,13 @@ export async function generateQuestionBank(
         const existing = questionsByPrompt.get(normalized);
 
         if (existing) {
+          // Preserve coverage when equivalent questions cover different requirements.
           existing.draft.requirement_ids = [
             ...new Set([
               ...existing.draft.requirement_ids,
               ...item.draft.requirement_ids
             ])
           ];
-
           continue;
         }
 

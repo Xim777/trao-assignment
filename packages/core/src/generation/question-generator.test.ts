@@ -1,4 +1,3 @@
-
 import { describe, expect, it, vi } from "vitest";
 import {
   generateQuestionBank
@@ -84,7 +83,8 @@ describe("generateQuestionBank", () => {
 
     expect(generateJson).toHaveBeenCalledTimes(4);
     expect(result.questions).toHaveLength(2);
-    expect(result.passes).toBe(2);
+    // Both must-have requirements were covered during the first pass.
+    expect(result.passes).toBe(1);
     expect(result.questions.map(question => question.id)).toEqual([
       "q1",
       "q2"
@@ -94,7 +94,6 @@ describe("generateQuestionBank", () => {
   it("runs a second pass for uncovered must-have requirements", async () => {
     const generateJson = vi.fn(async ({ systemPrompt, userPrompt }) => {
       const input = JSON.parse(userPrompt);
-
       const targetIds = input.requirements.map(
         (requirement: Requirement) => requirement.id
       );
@@ -110,8 +109,11 @@ describe("generateQuestionBank", () => {
         };
       }
 
+      // Only generate the behavioural question when the second pass
+      // contains the uncovered requirement alone.
       if (
         systemPrompt.includes("REQUESTED_CATEGORY: behavioural") &&
+        targetIds.length === 1 &&
         targetIds.includes("r3")
       ) {
         return {
@@ -132,6 +134,7 @@ describe("generateQuestionBank", () => {
     });
 
     expect(result.passes).toBe(2);
+    expect(generateJson).toHaveBeenCalledTimes(8);
     expect(result.questions).toHaveLength(2);
   });
 
@@ -200,28 +203,34 @@ describe("generateQuestionBank", () => {
     ).rejects.toThrow(/Unable to generate questions/);
   });
 
-  it("removes duplicate questions and assigns stable sequential IDs", async () => {
-    const generateJson = vi.fn(async ({ systemPrompt }) => {
+  it("merges requirement coverage for duplicate questions and assigns stable IDs", async () => {
+    const generateJson = vi.fn(async ({ systemPrompt, userPrompt }) => {
+      const input = JSON.parse(userPrompt);
+      const targetIds = input.requirements.map(
+        (requirement: Requirement) => requirement.id
+      );
+
       if (systemPrompt.includes("REQUESTED_CATEGORY: technical")) {
         return {
           questions: [
             createQuestion("r1", "Explain TypeScript generics."),
-            createQuestion("r1", "  EXPLAIN   TypeScript generics.  ")
+            createQuestion("r2", "  EXPLAIN   TypeScript generics.  ")
           ]
         };
       }
 
-    if (
-      systemPrompt.includes("REQUESTED_CATEGORY: behavioural") &&
-      targetIds.length === 1 &&
-      targetIds.includes("r3")
-    ) {
-      return {
-        questions: [
-          createQuestion("r3", "Describe a team conflict.")
-        ]
-      };
-    }
+      if (
+        systemPrompt.includes("REQUESTED_CATEGORY: behavioural") &&
+        targetIds.length === 1 &&
+        targetIds.includes("r3")
+      ) {
+        return {
+          questions: [
+            createQuestion("r3", "Describe a team conflict.")
+          ]
+        };
+      }
+
       return { questions: [] };
     });
 
@@ -232,11 +241,13 @@ describe("generateQuestionBank", () => {
       generateJson: createGenerator(generateJson)
     });
 
+    expect(result.passes).toBe(2);
     expect(result.questions).toHaveLength(2);
     expect(result.questions.map(question => question.id)).toEqual([
       "q1",
       "q2"
     ]);
+    expect(result.questions[0]?.requirement_ids).toEqual(["r1", "r2"]);
   });
 
   it("rejects empty role titles and missing requirements", async () => {
@@ -263,4 +274,3 @@ describe("generateQuestionBank", () => {
     expect(generateJson).not.toHaveBeenCalled();
   });
 });
-
