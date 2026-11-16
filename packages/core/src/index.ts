@@ -7,14 +7,19 @@ export * from "./research/company-brief.js";
 
 export {
   InterviewKitSchema
-  InterviewKit
 } from "./schemas/interview-kit.js";
 
+export type {
+  InterviewKit
+} from "./schemas/interview-kit.js";
 
 export {
   extractJobDescription,
   JDExtractionDraftSchema,
-  ExtractedRoleSchema,
+  ExtractedRoleSchema
+} from "./extraction/jd-extractor.js";
+
+export type {
   ExtractedRole,
   JsonGenerator
 } from "./extraction/jd-extractor.js";
@@ -22,13 +27,19 @@ export {
 export {
   runResearchPipeline,
   createResearchServiceDependencies,
-  RunResearchInputSchema,
+  RunResearchInputSchema
+} from "./research/research-service.js";
+
+export type {
   RunResearchInput,
   RunResearchResult,
   ResearchServiceDependencies
 } from "./research/research-service.js";
 
 export {
-  createStudySchedule,
+  createStudySchedule
+} from "./generation/study-schedule.js";
+
+export type {
   StudyScheduleInput
 } from "./generation/study-schedule.js";
