@@ -56,7 +56,7 @@ function createGenerator(
 describe("generateQuestionBank", () => {
   it("generates questions using separate category calls", async () => {
     const generateJson = vi.fn(async ({ systemPrompt }) => {
-      if (systemPrompt.includes("technical")) {
+      if (systemPrompt.includes("REQUESTED_CATEGORY: technical")) {
         return {
           questions: [
             createQuestion("r1", "Explain TypeScript generics.")
@@ -64,7 +64,7 @@ describe("generateQuestionBank", () => {
         };
       }
 
-      if (systemPrompt.includes("behavioural")) {
+      if (systemPrompt.includes("REQUESTED_CATEGORY: behavioural")) {
         return {
           questions: [
             createQuestion("r3", "Describe a team conflict.")
@@ -84,7 +84,7 @@ describe("generateQuestionBank", () => {
 
     expect(generateJson).toHaveBeenCalledTimes(4);
     expect(result.questions).toHaveLength(2);
-    expect(result.passes).toBe(1);
+    expect(result.passes).toBe(2);
     expect(result.questions.map(question => question.id)).toEqual([
       "q1",
       "q2"
@@ -100,7 +100,7 @@ describe("generateQuestionBank", () => {
       );
 
       if (
-        systemPrompt.includes("technical") &&
+        systemPrompt.includes("REQUESTED_CATEGORY: technical") &&
         targetIds.includes("r1")
       ) {
         return {
@@ -111,7 +111,7 @@ describe("generateQuestionBank", () => {
       }
 
       if (
-        systemPrompt.includes("behavioural") &&
+        systemPrompt.includes("REQUESTED_CATEGORY: behavioural") &&
         targetIds.includes("r3")
       ) {
         return {
@@ -131,7 +131,7 @@ describe("generateQuestionBank", () => {
       generateJson: createGenerator(generateJson)
     });
 
-    expect(result.passes).toBe(1);
+    expect(result.passes).toBe(2);
     expect(result.questions).toHaveLength(2);
   });
 
@@ -179,7 +179,7 @@ describe("generateQuestionBank", () => {
 
   it("ignores questions containing unknown requirement IDs", async () => {
     const generateJson = vi.fn(async ({ systemPrompt }) => {
-      if (systemPrompt.includes("technical")) {
+      if (systemPrompt.includes("REQUESTED_CATEGORY: technical")) {
         return {
           questions: [
             createQuestion("unknown-id", "Explain a made-up skill.")
@@ -202,7 +202,7 @@ describe("generateQuestionBank", () => {
 
   it("removes duplicate questions and assigns stable sequential IDs", async () => {
     const generateJson = vi.fn(async ({ systemPrompt }) => {
-      if (systemPrompt.includes("technical")) {
+      if (systemPrompt.includes("REQUESTED_CATEGORY: technical")) {
         return {
           questions: [
             createQuestion("r1", "Explain TypeScript generics."),
@@ -211,14 +211,17 @@ describe("generateQuestionBank", () => {
         };
       }
 
-      if (systemPrompt.includes("behavioural")) {
-        return {
-          questions: [
-            createQuestion("r3", "Describe a team conflict.")
-          ]
-        };
-      }
-
+    if (
+      systemPrompt.includes("REQUESTED_CATEGORY: behavioural") &&
+      targetIds.length === 1 &&
+      targetIds.includes("r3")
+    ) {
+      return {
+        questions: [
+          createQuestion("r3", "Describe a team conflict.")
+        ]
+      };
+    }
       return { questions: [] };
     });
 
@@ -260,3 +263,4 @@ describe("generateQuestionBank", () => {
     expect(generateJson).not.toHaveBeenCalled();
   });
 });
+
