@@ -52,6 +52,28 @@ describe("authentication", () => {
     });
   });
 
+  it("rejects state-changing requests from an untrusted origin", async () => {
+    await startServer();
+
+    const response = await fetch(`${baseUrl}/api/auth/register`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://attacker.example"
+      },
+      body: JSON.stringify({
+        email: "candidate@example.com",
+        password: "a-long-enough-password"
+      })
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      success: false,
+      error: "UNTRUSTED_ORIGIN"
+    });
+  });
+
   it("rejects malformed login input before accessing the database", async () => {
     await startServer();
 
