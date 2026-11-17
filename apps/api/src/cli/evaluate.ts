@@ -8,12 +8,12 @@ import {
 } from "@prepkit/core";
 import { generateWithGemini } from "../services/llm/gemini-provider.js";
 import { createTavilySearchProvider } from "../services/search/tavily-provider.js";
-dotenv.config({ path: resolve(process.cwd(), ".env") });
-
 import {
   BatchInputSchema,
   evaluateBatchCases
 } from "../services/batch-evaluator.js";
+
+dotenv.config({ path: resolve(process.cwd(), ".env") });
 
 function parseArguments(args: string[]): { input: string; output: string } {
   let input: string | undefined;
