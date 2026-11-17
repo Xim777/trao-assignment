@@ -21,7 +21,7 @@ export const RequirementSchema = z.object({
 const QuestionSchema = z.object({
   id: z.string().min(1),
 
-  requirement_ids: z.array(z.string()),
+  requirement_ids: z.array(z.string()).min(1).min(1),
 
   category: z.enum([
     "technical",
@@ -246,11 +246,22 @@ export const InterviewKitSchema =
 
     }
 
-    // Every scheduled question must exist
+    // Every generated question must appear exactly once in the schedule.
+    const scheduledQuestionList = kit.schedule.days.flatMap(d => d.question_ids);
+    const scheduledQuestionIds = new Set(scheduledQuestionList);
 
-    const scheduledQuestionIds = new Set(
-      kit.schedule.days.flatMap(d => d.question_ids)
-    );
+    checkUnique(scheduledQuestionList, ["schedule", "days"]);
+
+    if (
+      scheduledQuestionList.length !== questions.length ||
+      questions.some(question => !scheduledQuestionIds.has(question.id))
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["schedule", "days"],
+        message: "Every question must appear exactly once in the study schedule"
+      });
+    }
 
     kit.schedule.days.forEach((day, index) => {
 
