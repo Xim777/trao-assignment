@@ -55,6 +55,17 @@ export function createKitGenerationRouter(
         generateJson: dependencies.generateJson
       });
 
+      const flashcardGeneration = await generateFlashcards({
+        roleTitle: role.title,
+        requirements: role.requirements,
+        questions: generation.questions,
+        companyBrief: {
+          summary: companyResearch.company_brief.summary,
+          what_they_do: companyResearch.company_brief.what_they_do
+        },
+        generateJson: dependencies.generateJson
+      });
+
       const schedule = createStudySchedule({
         requirements: role.requirements,
         questions: generation.questions,
@@ -64,6 +75,7 @@ export function createKitGenerationRouter(
       return res.status(200).json({
         success: true,
         questions: generation.questions,
+        flashcards: flashcardGeneration.flashcards,
         schedule,
         coverage: {
           uncovered_requirement_ids: generation.uncoveredRequirementIds,
