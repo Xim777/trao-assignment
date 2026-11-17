@@ -88,11 +88,12 @@ describe("generateQuestionBank", () => {
     expect(result.passes).toBe(1);
     expect(result.questions.map(question => question.id)).toEqual([
       "q1",
-      "q2"
+      "q2",
+      "q3"
     ]);
   });
 
-  it("runs a second pass for uncovered must-have requirements", async () => {
+  it("runs a second pass for uncovered requirements", async () => {
     const generateJson = vi.fn(async ({ systemPrompt, userPrompt }) => {
       const input = JSON.parse(userPrompt);
       const targetIds = input.requirements.map(
