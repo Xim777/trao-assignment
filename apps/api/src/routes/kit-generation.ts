@@ -1,12 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
 import {
-  createStudySchedule,
   ExtractedRoleSchema,
-  generateQuestionBank,
-  generateFlashcards,
   CompanyResearchResultSchema,
-  InterviewKitSchema,
+  generateInterviewKit,
   type JsonGenerator
 } from "@prepkit/core";
 
@@ -44,78 +41,27 @@ export function createKitGenerationRouter(
       });
     }
 
-    const { role, companyResearch, daysAvailable } = parsed.data;
-
     try {
-      const companyBrief = {
-        summary: companyResearch.company_brief.summary,
-        what_they_do: companyResearch.company_brief.what_they_do
-      };
-
-      const generation = await generateQuestionBank({
-        roleTitle: role.title,
-        requirements: role.requirements,
-        companyBrief,
+      const kit = await generateInterviewKit({
+        ...parsed.data,
         generateJson: dependencies.generateJson
       });
-
-      const flashcardGeneration = await generateFlashcards({
-        roleTitle: role.title,
-        requirements: role.requirements,
-        questions: generation.questions,
-        companyBrief,
-        generateJson: dependencies.generateJson
-      });
-
-      const schedule = createStudySchedule({
-        requirements: role.requirements,
-        questions: generation.questions,
-        daysAvailable
-      });
-
-      // Appendix A uses URL strings for company_brief.sources. The research
-      // pipeline retains richer source metadata internally, so project it here.
-      const kitCandidate = {
-        source: companyResearch.source,
-        company_brief: {
-          summary: companyResearch.company_brief.summary,
-          what_they_do: companyResearch.company_brief.what_they_do,
-          sources: companyResearch.company_brief.sources.map(source => source.url)
-        },
-        role,
-        questions: generation.questions,
-        flashcards: flashcardGeneration.flashcards,
-        schedule,
-        coverage: {
-          uncovered_requirement_ids: generation.uncoveredRequirementIds,
-          passes: generation.passes
-        }
-      };
-
-      const validatedKit = InterviewKitSchema.safeParse(kitCandidate);
-
-      if (!validatedKit.success) {
-        console.error("Generated interview kit failed validation:", validatedKit.error);
-        return res.status(502).json({
-          success: false,
-          error: "INVALID_GENERATED_KIT",
-          message: "The generated interview kit did not match the required structure.",
-          details: validatedKit.error.flatten()
-        });
-      }
 
       return res.status(200).json({
         success: true,
-        kit: validatedKit.data,
+        kit,
         // Keep the existing top-level response fields for current API clients.
-        ...validatedKit.data
+        ...kit
       });
     } catch (error) {
       console.error("Interview kit generation failed:", error);
 
+      const isValidationError = error instanceof Error &&
+        error.message.includes("Appendix A validation");
+
       return res.status(502).json({
         success: false,
-        error: "GENERATION_FAILED",
+        error: isValidationError ? "INVALID_GENERATED_KIT" : "GENERATION_FAILED",
         message: error instanceof Error
           ? error.message
           : "Interview kit generation failed."
