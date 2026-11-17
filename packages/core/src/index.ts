@@ -61,3 +61,7 @@ export type {
   FlashcardGeneratorInput,
   FlashcardGenerationResult
 } from "./generation/flashcard-generator.js";
+
+export { generateInterviewKit } from "./generation/kit-generator.js";
+
+export type { GenerateInterviewKitInput } from "./generation/kit-generator.js";
