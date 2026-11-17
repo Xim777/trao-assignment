@@ -115,7 +115,7 @@ Local/private website targets are permitted when `NODE_ENV` is not `production` 
 4. Search public interview discussions. Discussion-search failure is recorded as a limitation rather than discarding successful official research.
 5. Generate the company brief using collected evidence and validate its citations against collected sources.
 6. Generate questions separately by category.
-7. Compare generated question requirement IDs against must-have requirements. Run a second generation pass for uncovered must-have requirements and fail rather than shipping a kit with missing must-have coverage.
+7. Compare generated question requirement IDs against every extracted requirement. Run a second generation pass for all uncovered requirements, then fail rather than shipping a kit with missing must-have coverage.
 8. Generate flashcards and a deterministic schedule.
 9. Validate the complete Appendix A object before returning or persisting it.
 
@@ -123,4 +123,4 @@ Local/private website targets are permitted when `NODE_ENV` is not `production` 
 
 - Email verification, password reset and role hierarchies are intentionally out of scope for the assessment.
 - Generation and research require configured external Gemini and Tavily credentials.
-- The batch evaluator runs cases sequentially; total completion time depends on provider quotas and the sites being crawled.
+- The batch evaluator runs cases sequentially; total completion time depends on provider quotas and the sites being crawled. Gemini and Tavily requests use bounded retries with exponential backoff for transient failures and rate limits. Repeated submissions are treated as independent kits rather than silently overwriting an earlier result.
