@@ -310,7 +310,7 @@ describe("generateQuestionBank", () => {
     expect(companyFitCall?.[0].userPrompt).toContain(companyBrief.what_they_do);
   });
 
-  it("rejects empty role titles and missing requirements", async () => {
+  it("rejects empty role titles and returns a thin result for missing requirements", async () => {
     const generateJson = vi.fn();
 
     await expect(
@@ -322,15 +322,18 @@ describe("generateQuestionBank", () => {
       })
     ).rejects.toThrow(/Role title cannot be empty/);
 
-    await expect(
-      generateQuestionBank({
-        roleTitle: "Backend Engineer",
-        requirements: [],
-        companyBrief,
-        generateJson: createGenerator(generateJson)
-      })
-    ).rejects.toThrow(/At least one role requirement/);
+    const thinResult = await generateQuestionBank({
+      roleTitle: "Backend Engineer",
+      requirements: [],
+      companyBrief,
+      generateJson: createGenerator(generateJson)
+    });
 
+    expect(thinResult).toEqual({
+      questions: [],
+      passes: 1,
+      uncoveredRequirementIds: []
+    });
     expect(generateJson).not.toHaveBeenCalled();
   });
 });
