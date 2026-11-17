@@ -16,6 +16,16 @@ declare global {
 
 export const SESSION_COOKIE_NAME = "trao_session";
 
+export function requireTrustedOrigin(request: Request, response: Response, next: NextFunction): void {
+  const origin = request.get("origin");
+  const expectedOrigin = process.env.FRONTEND_ORIGIN ?? "http://localhost:3000";
+  if (origin && origin !== expectedOrigin) {
+    response.status(403).json({ success: false, error: "UNTRUSTED_ORIGIN", message: "This request origin is not allowed." });
+    return;
+  }
+  next();
+}
+
 export function readSessionCookie(request: Request): string | null {
   const cookieHeader = request.headers.cookie;
   if (!cookieHeader) return null;
@@ -59,7 +69,7 @@ export async function requireAuth(
       response.clearCookie(SESSION_COOKIE_NAME, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
         path: "/"
       });
       response.status(401).json({
