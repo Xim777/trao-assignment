@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "npm run build --workspace=@prepkit/core && concurrently -k \"npm run dev --workspace=@prepkit/core\" \"npm run dev --workspace=@prepkit/api\" \"npm run dev --workspace=@prepkit/web\"",
     "build": "npm run build --workspace=@prepkit/core && npm run build --workspace=@prepkit/api && npm run build --workspace=@prepkit/web",
-    "test": "npm run test --workspace=@prepkit/core"
+    "test": "npm run test --workspace=@prepkit/core && npm run test --workspace=@prepkit/api"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
