@@ -58,7 +58,8 @@ describe("generateQuestionBank", () => {
       if (systemPrompt.includes("REQUESTED_CATEGORY: technical")) {
         return {
           questions: [
-            createQuestion("r1", "Explain TypeScript generics.")
+            createQuestion("r1", "Explain TypeScript generics."),
+            createQuestion("r2", "Explain database indexing.")
           ]
         };
       }
@@ -82,8 +83,8 @@ describe("generateQuestionBank", () => {
     });
 
     expect(generateJson).toHaveBeenCalledTimes(4);
-    expect(result.questions).toHaveLength(2);
-    // Both must-have requirements were covered during the first pass.
+    expect(result.questions).toHaveLength(3);
+    // All requirements were covered during the first pass.
     expect(result.passes).toBe(1);
     expect(result.questions.map(question => question.id)).toEqual([
       "q1",
@@ -109,11 +110,22 @@ describe("generateQuestionBank", () => {
         };
       }
 
-      // Only generate the behavioural question when the second pass
-      // contains the uncovered requirement alone.
+      if (
+        systemPrompt.includes("REQUESTED_CATEGORY: technical") &&
+        targetIds.includes("r2")
+      ) {
+        return {
+          questions: [
+            createQuestion("r2", "Explain database indexing.")
+          ]
+        };
+      }
+
+      // The initial pass omits the behavioural question; the second pass
+      // receives only the still-uncovered requirements.
       if (
         systemPrompt.includes("REQUESTED_CATEGORY: behavioural") &&
-        targetIds.length === 1 &&
+        targetIds.length === 2 &&
         targetIds.includes("r3")
       ) {
         return {
@@ -135,7 +147,8 @@ describe("generateQuestionBank", () => {
 
     expect(result.passes).toBe(2);
     expect(generateJson).toHaveBeenCalledTimes(8);
-    expect(result.questions).toHaveLength(2);
+    expect(result.questions).toHaveLength(3);
+    expect(result.uncoveredRequirementIds).toEqual([]);
   });
 
   it("fails when a must-have requirement remains uncovered", async () => {
