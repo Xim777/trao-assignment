@@ -250,6 +250,66 @@ describe("generateQuestionBank", () => {
     expect(result.questions[0]?.requirement_ids).toEqual(["r1", "r2"]);
   });
 
+
+  it("merges near-duplicate prompts within the same category", async () => {
+    const generateJson = vi.fn(async ({ systemPrompt }) => {
+      if (systemPrompt.includes("REQUESTED_CATEGORY: technical")) {
+        return {
+          questions: [
+            createQuestion("r1", "How would you design and implement reliable TypeScript validation for incoming API request payloads?"),
+            createQuestion("r2", "How would you implement and design reliable TypeScript validation for incoming API request payloads?")
+          ]
+        };
+      }
+
+      if (systemPrompt.includes("REQUESTED_CATEGORY: behavioural")) {
+        return {
+          questions: [
+            createQuestion("r3", "Tell me about a time you communicated a difficult decision.")
+          ]
+        };
+      }
+
+      return { questions: [] };
+    });
+
+    const result = await generateQuestionBank({
+      roleTitle: "Backend Engineer",
+      requirements,
+      companyBrief,
+      generateJson: createGenerator(generateJson)
+    });
+
+    expect(result.questions).toHaveLength(2);
+    expect(result.questions[0]?.requirement_ids).toEqual(["r1", "r2"]);
+  });
+
+  it("includes specific guidance for behavioural and company-fit categories", async () => {
+    const generateJson = vi.fn(async () => ({ questions: [] }));
+
+    await expect(
+      generateQuestionBank({
+        roleTitle: "Backend Engineer",
+        requirements,
+        companyBrief,
+        generateJson: createGenerator(generateJson)
+      })
+    ).rejects.toThrow(/Unable to generate questions/);
+
+    const calls = generateJson.mock.calls;
+    const behaviouralCall = calls.find(([args]) =>
+      args.systemPrompt.includes("REQUESTED_CATEGORY: behavioural")
+    );
+    const companyFitCall = calls.find(([args]) =>
+      args.systemPrompt.includes("REQUESTED_CATEGORY: company-fit")
+    );
+
+    expect(behaviouralCall?.[0].systemPrompt).toContain("specific real past experience");
+    expect(behaviouralCall?.[0].userPrompt).toContain("candidate's actions and outcome");
+    expect(companyFitCall?.[0].systemPrompt).toContain("supplied company brief");
+    expect(companyFitCall?.[0].userPrompt).toContain(companyBrief.what_they_do);
+  });
+
   it("rejects empty role titles and missing requirements", async () => {
     const generateJson = vi.fn();
 
