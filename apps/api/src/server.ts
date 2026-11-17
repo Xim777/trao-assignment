@@ -86,6 +86,8 @@ app.post("/api/kits/extract-role", async (request, response) => {
   }
 });
 
+app.use("/api/research", requireAuth);
+
 app.post("/api/research/discussions", async (request, response) => {
   const { company, role } = request.body ?? {};
   if (
