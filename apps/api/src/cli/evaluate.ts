@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
+import dotenv from "dotenv";
 import {
   createResearchServiceDependencies,
   runResearchPipeline,
@@ -7,6 +8,8 @@ import {
 } from "@prepkit/core";
 import { generateWithGemini } from "../services/llm/gemini-provider.js";
 import { createTavilySearchProvider } from "../services/search/tavily-provider.js";
+dotenv.config({ path: resolve(process.cwd(), ".env") });
+
 import {
   BatchInputSchema,
   evaluateBatchCases
