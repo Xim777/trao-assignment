@@ -1,4 +1,3 @@
-
 name: TRAO CI
 
 on:
@@ -29,8 +28,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run core tests
-        run: npm run build
+      - name: Run core and API tests
+        run: npm test
 
       - name: Build all workspaces
-        run: npm test
+        run: npm run build
