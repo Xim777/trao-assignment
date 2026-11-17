@@ -102,6 +102,7 @@ describe("generateQuestionBank", () => {
 
       if (
         systemPrompt.includes("REQUESTED_CATEGORY: technical") &&
+        targetIds.length === 3 &&
         targetIds.includes("r1")
       ) {
         return {
@@ -113,6 +114,7 @@ describe("generateQuestionBank", () => {
 
       if (
         systemPrompt.includes("REQUESTED_CATEGORY: technical") &&
+        targetIds.length === 2 &&
         targetIds.includes("r2")
       ) {
         return {
