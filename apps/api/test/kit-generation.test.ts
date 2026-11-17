@@ -126,7 +126,7 @@ describe("POST /api/kits/generate", () => {
     baseUrl = `http://127.0.0.1:${address.port}`;
   }
 
-  it("generates questions and a schedule from a research result", async () => {
+  it("returns a complete Appendix A kit with the exact required structure", async () => {
     const generateJson = createGenerator();
     await startServer(generateJson);
 
@@ -142,6 +142,15 @@ describe("POST /api/kits/generate", () => {
 
     const body = await response.json() as {
       success: boolean;
+      kit: {
+        source: typeof companyResearch.source;
+        company_brief: { summary: string; what_they_do: string; sources: string[] };
+        role: typeof role;
+        questions: Array<{ id: string; requirement_ids: string[] }>;
+        flashcards: Array<{ id: string; requirement_ids: string[]; front: string; back: string }>;
+        schedule: { days_available: number; days: Array<{ question_ids: string[]; minutes: number }> };
+        coverage: { uncovered_requirement_ids: string[]; passes: number };
+      };
       questions: Array<{ id: string; requirement_ids: string[] }>;
       flashcards: Array<{ id: string; requirement_ids: string[]; front: string; back: string }>;
       schedule: { days_available: number; days: Array<{ question_ids: string[] }> };
@@ -150,16 +159,28 @@ describe("POST /api/kits/generate", () => {
 
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
-    expect(body.questions).toHaveLength(2);
-    expect(body.flashcards).toHaveLength(2);
-    expect(body.flashcards.map(card => card.id)).toEqual(["f1", "f2"]);
-    expect(body.flashcards.map(card => card.requirement_ids)).toEqual([["r1"], ["r2"]]);
-    expect(body.schedule.days_available).toBe(3);
-    expect(body.schedule.days).toHaveLength(3);
-    expect(body.schedule.days.flatMap(day => day.question_ids).sort())
+    expect(body.kit).toBeDefined();
+    expect(Object.keys(body.kit).sort()).toEqual([
+      "company_brief", "coverage", "flashcards", "questions", "role", "schedule", "source"
+    ]);
+    expect(body.kit.source).toEqual(companyResearch.source);
+    expect(body.kit.company_brief.sources).toEqual([]);
+    expect(body.kit.questions).toHaveLength(2);
+    expect(body.kit.flashcards).toHaveLength(2);
+    expect(body.kit.flashcards.map(card => card.id)).toEqual(["f1", "f2"]);
+    expect(body.kit.schedule.days_available).toBe(3);
+    expect(body.kit.schedule.days).toHaveLength(3);
+    expect(body.kit.schedule.days.flatMap(day => day.question_ids).sort())
       .toEqual(["q1", "q2"]);
-    expect(body.coverage.uncovered_requirement_ids).toEqual([]);
-    expect(body.coverage.passes).toBe(1);
+    expect(body.kit.schedule.days.every(day => Number.isInteger(day.minutes))).toBe(true);
+    expect(body.kit.coverage.uncovered_requirement_ids).toEqual([]);
+    expect(body.kit.coverage.passes).toBe(1);
+
+    // Backward-compatible top-level fields remain available.
+    expect(body.questions).toEqual(body.kit.questions);
+    expect(body.flashcards).toEqual(body.kit.flashcards);
+    expect(body.schedule).toEqual(body.kit.schedule);
+    expect(body.coverage).toEqual(body.kit.coverage);
     expect(generateJson).toHaveBeenCalledTimes(5);
   });
 
