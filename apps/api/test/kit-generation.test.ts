@@ -53,6 +53,23 @@ const companyResearch = {
 
 function createGenerator(): JsonGenerator {
   return vi.fn(async ({ systemPrompt }) => {
+    if (systemPrompt.includes("You create concise, high-quality interview preparation flashcards.")) {
+      return {
+        flashcards: [
+          {
+            requirement_ids: ["r1"],
+            front: "What makes a TypeScript API contract safe?",
+            back: "Use explicit types and validate untrusted runtime input."
+          },
+          {
+            requirement_ids: ["r2"],
+            front: "How do you demonstrate effective communication?",
+            back: "Describe the context, your actions, and the outcome."
+          }
+        ]
+      };
+    }
+
     if (systemPrompt.includes("REQUESTED_CATEGORY: technical")) {
       return {
         questions: [{
@@ -126,6 +143,7 @@ describe("POST /api/kits/generate", () => {
     const body = await response.json() as {
       success: boolean;
       questions: Array<{ id: string; requirement_ids: string[] }>;
+      flashcards: Array<{ id: string; requirement_ids: string[]; front: string; back: string }>;
       schedule: { days_available: number; days: Array<{ question_ids: string[] }> };
       coverage: { uncovered_requirement_ids: string[]; passes: number };
     };
@@ -133,13 +151,16 @@ describe("POST /api/kits/generate", () => {
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
     expect(body.questions).toHaveLength(2);
+    expect(body.flashcards).toHaveLength(2);
+    expect(body.flashcards.map(card => card.id)).toEqual(["f1", "f2"]);
+    expect(body.flashcards.map(card => card.requirement_ids)).toEqual([["r1"], ["r2"]]);
     expect(body.schedule.days_available).toBe(3);
     expect(body.schedule.days).toHaveLength(3);
     expect(body.schedule.days.flatMap(day => day.question_ids).sort())
       .toEqual(["q1", "q2"]);
     expect(body.coverage.uncovered_requirement_ids).toEqual([]);
     expect(body.coverage.passes).toBe(1);
-    expect(generateJson).toHaveBeenCalledTimes(4);
+    expect(generateJson).toHaveBeenCalledTimes(5);
   });
 
   it("rejects an invalid day count before calling the LLM", async () => {
