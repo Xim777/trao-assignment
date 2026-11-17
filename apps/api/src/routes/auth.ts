@@ -9,6 +9,7 @@ import {
 import {
   readSessionCookie,
   requireAuth,
+  requireTrustedOrigin,
   SESSION_COOKIE_NAME
 } from "../middleware/require-auth.js";
 
@@ -26,7 +27,7 @@ function cookieOptions() {
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "lax" as const,
+    sameSite: process.env.NODE_ENV === "production" ? "none" as const : "lax" as const,
     path: "/",
     maxAge: 7 * 24 * 60 * 60 * 1000
   };
@@ -35,7 +36,7 @@ function cookieOptions() {
 export function createAuthRouter(): Router {
   const router = Router();
 
-  router.post("/register", async (request, response) => {
+  router.post("/register", requireTrustedOrigin, async (request, response) => {
     const parsed = RegisterSchema.safeParse(request.body);
     if (!parsed.success) {
       response.status(400).json({
@@ -69,7 +70,7 @@ export function createAuthRouter(): Router {
     }
   });
 
-  router.post("/login", async (request, response) => {
+  router.post("/login", requireTrustedOrigin, async (request, response) => {
     const parsed = LoginSchema.safeParse(request.body);
     if (!parsed.success) {
       response.status(400).json({
@@ -103,7 +104,7 @@ export function createAuthRouter(): Router {
     }
   });
 
-  router.post("/logout", async (request, response) => {
+  router.post("/logout", requireTrustedOrigin, async (request, response) => {
     const token = readSessionCookie(request);
     if (token) {
       try {
@@ -121,7 +122,7 @@ export function createAuthRouter(): Router {
     response.clearCookie(SESSION_COOKIE_NAME, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       path: "/"
     });
     response.status(200).json({ success: true });
