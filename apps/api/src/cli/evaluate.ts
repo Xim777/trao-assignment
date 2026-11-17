@@ -1,6 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
-import { z } from "zod";
 import {
   createResearchServiceDependencies,
   runResearchPipeline,
@@ -8,19 +7,10 @@ import {
 } from "@prepkit/core";
 import { generateWithGemini } from "../services/llm/gemini-provider.js";
 import { createTavilySearchProvider } from "../services/search/tavily-provider.js";
-
-const BatchCaseSchema = z.object({
-  id: z.string().trim().min(1),
-  jd: z.string().trim().min(1).max(50000),
-  company_url: z.string().url(),
-  days: z.number().int().min(1).max(60)
-}).strict();
-
-const BatchInputSchema = z.array(z.unknown()).min(1);
-
-type BatchResult =
-  | { id: string; status: "ok"; kit: Awaited<ReturnType<typeof generateInterviewKit>>; error: null }
-  | { id: string; status: "failed"; kit: null; error: { code: string; message: string } };
+import {
+  BatchInputSchema,
+  evaluateBatchCases
+} from "../services/batch-evaluator.js";
 
 function parseArguments(args: string[]): { input: string; output: string } {
   let input: string | undefined;
@@ -47,86 +37,34 @@ function companyNameFromUrl(value: string): string {
   return hostname.replace(/^www\./i, "") || hostname;
 }
 
-function failureCode(error: unknown): string {
-  const message = error instanceof Error ? error.message : "";
-  if (/company website research failed|website returned HTTP|unable to resolve|timed out/i.test(message)) {
-    return "COMPANY_UNREACHABLE";
-  }
-  if (/invalid|must be|is required/i.test(message)) {
-    return "INVALID_CASE";
-  }
-  return "PIPELINE_FAILED";
-}
-
-async function runCase(
-  rawCase: unknown,
-  index: number,
-  dependencies: ReturnType<typeof createResearchServiceDependencies>
-): Promise<BatchResult> {
-  const fallbackId = `case-${String(index + 1).padStart(2, "0")}`;
-  const candidateId =
-    typeof rawCase === "object" && rawCase !== null &&
-    "id" in rawCase && typeof rawCase.id === "string" && rawCase.id.trim()
-      ? rawCase.id.trim()
-      : fallbackId;
-
-  try {
-    const parsed = BatchCaseSchema.parse(rawCase);
-    const company = companyNameFromUrl(parsed.company_url);
-
-    const research = await runResearchPipeline({
-      company,
-      company_url: parsed.company_url,
-      jd: parsed.jd
-    }, dependencies);
-
-    const kit = await generateInterviewKit({
-      role: research.role,
-      companyResearch: research.companyResearch,
-      daysAvailable: parsed.days,
-      generateJson: generateWithGemini
-    });
-
-    return {
-      id: parsed.id,
-      status: "ok",
-      kit,
-      error: null
-    };
-  } catch (error) {
-    return {
-      id: candidateId,
-      status: "failed",
-      kit: null,
-      error: {
-        code: failureCode(error),
-        message: error instanceof Error ? error.message.slice(0, 500) : "Unknown case failure."
-      }
-    };
-  }
-}
-
 async function main(): Promise<void> {
   const { input, output } = parseArguments(process.argv.slice(2));
   const inputText = await readFile(input, "utf8");
-  const rawInput: unknown = JSON.parse(inputText);
-  const cases = BatchInputSchema.parse(rawInput);
+  const cases = BatchInputSchema.parse(JSON.parse(inputText));
 
   const dependencies = createResearchServiceDependencies(
     generateWithGemini,
     createTavilySearchProvider()
   );
 
-  const results: BatchResult[] = [];
+  const results = await evaluateBatchCases(cases, async batchCase => {
+    const research = await runResearchPipeline({
+      company: companyNameFromUrl(batchCase.company_url),
+      company_url: batchCase.company_url,
+      jd: batchCase.jd
+    }, dependencies);
 
-  // Sequential execution respects provider and per-host rate limits.
-  for (let index = 0; index < cases.length; index++) {
-    const result = await runCase(cases[index], index, dependencies);
-    results.push(result);
+    return generateInterviewKit({
+      role: research.role,
+      companyResearch: research.companyResearch,
+      daysAvailable: batchCase.days,
+      generateJson: generateWithGemini
+    });
+  }, (completed, total, result) => {
     process.stdout.write(
-      `[${index + 1}/${cases.length}] ${result.id}: ${result.status}\n`
+      `[${completed}/${total}] ${result.id}: ${result.status}\n`
     );
-  }
+  });
 
   const document = {
     version: "1.0",
