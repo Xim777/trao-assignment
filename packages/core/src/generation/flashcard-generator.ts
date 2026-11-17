@@ -78,8 +78,9 @@ export async function generateFlashcards(
     throw new Error("Role title cannot be empty.");
   }
 
+  // Sparse descriptions can legitimately produce no flashcards.
   if (requirements.length === 0) {
-    throw new Error("At least one role requirement is required.");
+    return { flashcards: [] };
   }
 
   const requirementIds = new Set(requirements.map(item => item.id));
