@@ -1,16 +1,12 @@
-import {
-  CompanyResearchResultSchema,
-  ExtractedRoleSchema,
-  InterviewKitSchema,
-  type CompanyResearchResult,
-  type ExtractedRole,
-  type InterviewKit,
-  type JsonGenerator
-} from "../index.js";
+import { CompanyResearchResultSchema } from "../research/company-research-schemas.js";
+import type { CompanyResearchResult } from "../research/company-research-schemas.js";
+import { ExtractedRoleSchema } from "../extraction/jd-extractor.js";
+import type { ExtractedRole, JsonGenerator } from "../extraction/jd-extractor.js";
+import { InterviewKitSchema } from "../schemas/interview-kit.js";
+import type { InterviewKit } from "../schemas/interview-kit.js";
 import { createStudySchedule } from "./study-schedule.js";
 import { generateQuestionBank } from "./question-generator.js";
 import { generateFlashcards } from "./flashcard-generator.js";
-import { z } from "zod";
 
 export interface GenerateInterviewKitInput {
   role: ExtractedRole;
