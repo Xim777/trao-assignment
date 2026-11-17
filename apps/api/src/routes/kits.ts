@@ -3,7 +3,6 @@ import mongoose from "mongoose";
 import { z } from "zod";
 import { InterviewKitSchema } from "@prepkit/core";
 import { KitModel } from "../models/index.js";
-import { requireAuth } from "../middleware/require-auth.js";
 
 const SaveKitSchema = z.object({
   kit: InterviewKitSchema,
@@ -17,7 +16,6 @@ function isValidId(id: string): boolean {
 export function createKitRouter(): Router {
   const router = Router();
 
-  router.use(requireAuth);
 
   router.get("/", async (request, response) => {
     try {
