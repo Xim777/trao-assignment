@@ -221,8 +221,14 @@ export async function generateQuestionBank(
     throw new Error("Role title cannot be empty.");
   }
 
+  // A genuinely sparse job description may contain no extractable requirements.
+  // Return a thin but valid result rather than inventing requirements or failing.
   if (requirements.length === 0) {
-    throw new Error("At least one role requirement is required.");
+    return {
+      questions: [],
+      passes: 1,
+      uncoveredRequirementIds: []
+    };
   }
 
   const requirementIds = new Set(
