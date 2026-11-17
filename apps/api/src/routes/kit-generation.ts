@@ -6,6 +6,7 @@ import {
   generateQuestionBank,
   generateFlashcards,
   CompanyResearchResultSchema,
+  InterviewKitSchema,
   type JsonGenerator
 } from "@prepkit/core";
 
@@ -46,13 +47,15 @@ export function createKitGenerationRouter(
     const { role, companyResearch, daysAvailable } = parsed.data;
 
     try {
+      const companyBrief = {
+        summary: companyResearch.company_brief.summary,
+        what_they_do: companyResearch.company_brief.what_they_do
+      };
+
       const generation = await generateQuestionBank({
         roleTitle: role.title,
         requirements: role.requirements,
-        companyBrief: {
-          summary: companyResearch.company_brief.summary,
-          what_they_do: companyResearch.company_brief.what_they_do
-        },
+        companyBrief,
         generateJson: dependencies.generateJson
       });
 
@@ -60,10 +63,7 @@ export function createKitGenerationRouter(
         roleTitle: role.title,
         requirements: role.requirements,
         questions: generation.questions,
-        companyBrief: {
-          summary: companyResearch.company_brief.summary,
-          what_they_do: companyResearch.company_brief.what_they_do
-        },
+        companyBrief,
         generateJson: dependencies.generateJson
       });
 
@@ -73,8 +73,16 @@ export function createKitGenerationRouter(
         daysAvailable
       });
 
-      return res.status(200).json({
-        success: true,
+      // Appendix A uses URL strings for company_brief.sources. The research
+      // pipeline retains richer source metadata internally, so project it here.
+      const kitCandidate = {
+        source: companyResearch.source,
+        company_brief: {
+          summary: companyResearch.company_brief.summary,
+          what_they_do: companyResearch.company_brief.what_they_do,
+          sources: companyResearch.company_brief.sources.map(source => source.url)
+        },
+        role,
         questions: generation.questions,
         flashcards: flashcardGeneration.flashcards,
         schedule,
@@ -82,6 +90,25 @@ export function createKitGenerationRouter(
           uncovered_requirement_ids: generation.uncoveredRequirementIds,
           passes: generation.passes
         }
+      };
+
+      const validatedKit = InterviewKitSchema.safeParse(kitCandidate);
+
+      if (!validatedKit.success) {
+        console.error("Generated interview kit failed validation:", validatedKit.error);
+        return res.status(502).json({
+          success: false,
+          error: "INVALID_GENERATED_KIT",
+          message: "The generated interview kit did not match the required structure.",
+          details: validatedKit.error.flatten()
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        kit: validatedKit.data,
+        // Keep the existing top-level response fields for current API clients.
+        ...validatedKit.data
       });
     } catch (error) {
       console.error("Interview kit generation failed:", error);
