@@ -1,15 +1,15 @@
 import dotenv from "dotenv";
-import { generateWithGemini } from "./services/llm/gemini-provider.js";
 import { fileURLToPath } from "node:url";
-import { createTavilySearchProvider } from "./services/search/tavily-provider.js";
-
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
-import {
-  createKitGenerationRouter
-} from "./routes/kit-generation.js";
-
+import { generateWithGemini } from "./services/llm/gemini-provider.js";
+import { createTavilySearchProvider } from "./services/search/tavily-provider.js";
+import { connectDatabase } from "./database.js";
+import { createAuthRouter } from "./routes/auth.js";
+import { createKitRouter } from "./routes/kits.js";
+import { requireAuth } from "./middleware/require-auth.js";
+import { createKitGenerationRouter } from "./routes/kit-generation.js";
 import {
   extractJobDescription,
   searchCompanyDiscussions,
@@ -24,178 +24,105 @@ dotenv.config({
 });
 
 const app = express();
-
 const PORT = Number(process.env.PORT ?? 4000);
-
 const tavilySearchProvider = createTavilySearchProvider();
-
-const FRONTEND_ORIGIN =
-  process.env.FRONTEND_ORIGIN ??
-  "http://localhost:3000";
-
-
-// ----------------------------------
-// Middleware
-// ----------------------------------
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN ?? "http://localhost:3000";
 
 app.use(helmet());
-
 app.use(cors({
   origin: FRONTEND_ORIGIN,
   credentials: true
 }));
+app.use(express.json({ limit: "1mb" }));
 
-app.use(express.json({
-  limit: "1mb"
-}));
-
-
-// ----------------------------------
-// Health Check
-// ----------------------------------
-
-app.get("/health", (_req, res) => {
-
-  res.status(200).json({
+app.get("/health", (_request, response) => {
+  response.status(200).json({
     status: "ok",
     service: "ai-interview-prep-api"
   });
-
 });
 
+app.use("/api/auth", createAuthRouter());
 
-// ----------------------------------
-// Validate Interview Kit
-// ----------------------------------
+// All kit operations require a valid, unexpired session.
+app.use("/api/kits", requireAuth);
 
-app.post("/api/kits/validate", (req, res) => {
-
-  const result = InterviewKitSchema.safeParse(req.body);
-
+app.post("/api/kits/validate", (request, response) => {
+  const result = InterviewKitSchema.safeParse(request.body);
   if (!result.success) {
-
-    return res.status(400).json({
-
+    response.status(400).json({
       error: "INVALID_KIT",
-
       message: "Interview kit validation failed",
-
       issues: result.error.issues.map(issue => ({
-
         path: issue.path.join("."),
-
         message: issue.message
-
       }))
-
     });
-
+    return;
   }
 
-
-  return res.status(200).json({
-
-    valid: true,
-
-    kit: result.data
-
-  });
-
+  response.status(200).json({ valid: true, kit: result.data });
 });
 
-
-// ----------------------------------
-// Extract Job Description
-// ----------------------------------
-
-app.post("/api/kits/extract-role", (req, res) => {
-  const { jd } = req.body;
-
-  // Validate input
-  if (typeof jd !== "string" || !jd.trim()) {
-    return res.status(400).json({
+app.post("/api/kits/extract-role", async (request, response) => {
+  const jd = request.body?.jd;
+  if (typeof jd !== "string" || !jd.trim() || jd.length > 50000) {
+    response.status(400).json({
       error: "INVALID_INPUT",
-      message: "A non-empty job description is required."
+      message: "A non-empty job description of at most 50000 characters is required."
     });
+    return;
   }
 
-  // Run the extraction pipeline
-  void extractJobDescription(jd, generateWithGemini)
-    .then(role => {
-      return res.status(200).json({
-        success: true,
-        role
-      });
-    })
-    .catch(error => {
-      console.error("JD extraction failed:", error);
-
-      return res.status(502).json({
-        error: "EXTRACTION_FAILED",
-        message: "Failed to extract job description."
-      });
+  try {
+    const role = await extractJobDescription(jd, generateWithGemini);
+    response.status(200).json({ success: true, role });
+  } catch (error) {
+    console.error("JD extraction failed:", error);
+    response.status(502).json({
+      error: "EXTRACTION_FAILED",
+      message: error instanceof Error ? error.message : "Failed to extract job description."
     });
+  }
 });
 
-// ----------------------------------
-// Search Company Interview Discussions
-// ----------------------------------
-
-app.post("/api/research/discussions", async (req, res) => {
-  const { company, role } = req.body ?? {};
-
-  // Validate input
+app.post("/api/research/discussions", async (request, response) => {
+  const { company, role } = request.body ?? {};
   if (
-    typeof company !== "string" ||
-    !company.trim() ||
-    company.trim().length > 100 ||
-    typeof role !== "string" ||
-    !role.trim() ||
-    role.trim().length > 100
+    typeof company !== "string" || !company.trim() || company.trim().length > 100 ||
+    typeof role !== "string" || !role.trim() || role.trim().length > 100
   ) {
-    return res.status(400).json({
+    response.status(400).json({
       error: "INVALID_INPUT",
       message: "A valid company name and role are required."
     });
+    return;
   }
 
   try {
     const report = await searchCompanyDiscussions(
-      {
-        company: company.trim(),
-        role: role.trim()
-      },
+      { company: company.trim(), role: role.trim() },
       tavilySearchProvider
     );
-
-    return res.status(200).json({
-      success: true,
-      report
-    });
-
+    response.status(200).json({ success: true, report });
   } catch (error) {
     console.error("Company discussion search failed:", error);
-
-    return res.status(500).json({
+    response.status(500).json({
       error: "DISCUSSION_SEARCH_FAILED",
       message: "Failed to search company discussions."
     });
   }
 });
 
-// ----------------------------------
-// Run Complete Research Pipeline
-// ----------------------------------
-
-app.post("/api/kits/research", async (req, res) => {
-  const validation = RunResearchInputSchema.safeParse(req.body);
-
+app.post("/api/kits/research", async (request, response) => {
+  const validation = RunResearchInputSchema.safeParse(request.body);
   if (!validation.success) {
-    return res.status(400).json({
+    response.status(400).json({
       success: false,
       error: "INVALID_INPUT",
       details: validation.error.flatten()
     });
+    return;
   }
 
   try {
@@ -203,62 +130,38 @@ app.post("/api/kits/research", async (req, res) => {
       generateWithGemini,
       tavilySearchProvider
     );
-
-    const result = await runResearchPipeline(
-      validation.data,
-      dependencies
-    );
-
-    return res.status(200).json({
-      success: true,
-      ...result
-    });
-
+    const result = await runResearchPipeline(validation.data, dependencies);
+    response.status(200).json({ success: true, ...result });
   } catch (error) {
     console.error("Research pipeline failed:", error);
-
-    return res.status(502).json({
+    response.status(502).json({
       success: false,
       error: "RESEARCH_PIPELINE_FAILED",
-      message: error instanceof Error
-        ? error.message
-        : "Research pipeline failed."
+      message: error instanceof Error ? error.message : "Research pipeline failed."
     });
   }
 });
 
-// ----------------------------------
-// Kit Generation
-// ----------------------------------
-app.use(
-  "/api/kits",
-  createKitGenerationRouter({
-    generateJson: generateWithGemini
-  })
-);
+app.use("/api/kits", createKitGenerationRouter({
+  generateJson: generateWithGemini
+}));
+app.use("/api/kits", createKitRouter());
 
-// ----------------------------------
-// 404 Handler
-// ----------------------------------
-
-app.use((_req, res) => {
-
-  res.status(404).json({
+app.use((_request, response) => {
+  response.status(404).json({
     error: "NOT_FOUND",
     message: "Endpoint does not exist"
   });
-
 });
 
+async function startServer(): Promise<void> {
+  await connectDatabase();
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Backend running at http://localhost:${PORT}`);
+  });
+}
 
-// ----------------------------------
-// Start Server
-// ----------------------------------
-
-app.listen(PORT, "0.0.0.0", () => {
-
-  console.log(
-    `Backend running at http://localhost:${PORT}`
-  );
-
+startServer().catch(error => {
+  console.error("Backend startup failed:", error);
+  process.exit(1);
 });
