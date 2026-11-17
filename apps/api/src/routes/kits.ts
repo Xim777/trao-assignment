@@ -80,6 +80,145 @@ export function createKitRouter(): Router {
     }
   });
 
+  router.get("/:id/practice", async (request, response) => {
+    if (!isValidId(request.params.id!)) {
+      response.status(404).json({ success: false, error: "KIT_NOT_FOUND" });
+      return;
+    }
+
+    try {
+      const saved = await KitModel.findOne({
+        _id: request.params.id,
+        userId: request.authUser!.id
+      }).lean();
+
+      if (!saved) {
+        response.status(404).json({ success: false, error: "KIT_NOT_FOUND" });
+        return;
+      }
+
+      const cards = Array.isArray((saved.kit as { flashcards?: unknown[] }).flashcards)
+        ? (saved.kit as { flashcards: Array<{ id: string; front: string; back: string; requirement_ids: string[] }> }).flashcards
+        : [];
+      const progress = new Map(
+        (saved.practiceProgress ?? []).map(item => [item.flashcardId, item])
+      );
+
+      const sessionCards = cards.map(card => {
+        const state = progress.get(card.id);
+        return {
+          ...card,
+          covered: state?.covered ?? false,
+          confidence: state?.confidence ?? null,
+          review_count: state?.reviewCount ?? 0,
+          last_reviewed_at: state?.lastReviewedAt ?? null
+        };
+      }).sort((first, second) => {
+        const firstConfidence = first.confidence ?? 0;
+        const secondConfidence = second.confidence ?? 0;
+        if (firstConfidence !== secondConfidence) return firstConfidence - secondConfidence;
+        const firstReviewed = first.last_reviewed_at
+          ? new Date(first.last_reviewed_at).getTime() : 0;
+        const secondReviewed = second.last_reviewed_at
+          ? new Date(second.last_reviewed_at).getTime() : 0;
+        return firstReviewed - secondReviewed;
+      });
+
+      response.status(200).json({
+        success: true,
+        cards: sessionCards,
+        total: sessionCards.length,
+        covered: sessionCards.filter(card => card.covered).length
+      });
+    } catch {
+      response.status(503).json({
+        success: false,
+        error: "PRACTICE_LOAD_FAILED",
+        message: "Unable to load flashcard practice progress."
+      });
+    }
+  });
+
+  router.patch("/:id/practice/:flashcardId", async (request, response) => {
+    if (!isValidId(request.params.id!)) {
+      response.status(404).json({ success: false, error: "KIT_NOT_FOUND" });
+      return;
+    }
+
+    const parsed = z.object({
+      confidence: z.number().int().min(1).max(5),
+      covered: z.boolean()
+    }).strict().safeParse(request.body);
+
+    if (!parsed.success) {
+      response.status(400).json({
+        success: false,
+        error: "INVALID_PRACTICE_UPDATE",
+        details: parsed.error.flatten()
+      });
+      return;
+    }
+
+    try {
+      const saved = await KitModel.findOne({
+        _id: request.params.id,
+        userId: request.authUser!.id
+      });
+
+      if (!saved) {
+        response.status(404).json({ success: false, error: "KIT_NOT_FOUND" });
+        return;
+      }
+
+      const kit = saved.kit as { flashcards?: Array<{ id: string }> };
+      if (!kit.flashcards?.some(card => card.id === request.params.flashcardId)) {
+        response.status(404).json({
+          success: false,
+          error: "FLASHCARD_NOT_FOUND"
+        });
+        return;
+      }
+
+      const now = new Date();
+      const existing = saved.practiceProgress.find(
+        item => item.flashcardId === request.params.flashcardId
+      );
+
+      if (existing) {
+        existing.confidence = parsed.data.confidence;
+        existing.covered = parsed.data.covered;
+        existing.lastReviewedAt = now;
+        existing.reviewCount += 1;
+      } else {
+        saved.practiceProgress.push({
+          flashcardId: request.params.flashcardId,
+          confidence: parsed.data.confidence,
+          covered: parsed.data.covered,
+          lastReviewedAt: now,
+          reviewCount: 1
+        });
+      }
+
+      await saved.save();
+      response.status(200).json({
+        success: true,
+        progress: {
+          flashcard_id: request.params.flashcardId,
+          confidence: parsed.data.confidence,
+          covered: parsed.data.covered,
+          review_count: existing ? existing.reviewCount : 1,
+          last_reviewed_at: now
+        }
+      });
+    } catch {
+      response.status(503).json({
+        success: false,
+        error: "PRACTICE_UPDATE_FAILED",
+        message: "Unable to save flashcard practice progress."
+      });
+    }
+  });
+
   router.get("/:id", async (request, response) => {
     if (!isValidId(request.params.id!)) {
       response.status(404).json({ success: false, error: "KIT_NOT_FOUND" });
