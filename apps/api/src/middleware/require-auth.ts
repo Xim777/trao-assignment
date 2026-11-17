@@ -53,6 +53,17 @@ export async function requireAuth(
   response: Response,
   next: NextFunction
 ): Promise<void> {
+  const origin = request.get("origin");
+  const expectedOrigin = process.env.FRONTEND_ORIGIN ?? "http://localhost:3000";
+  if (origin && origin !== expectedOrigin) {
+    response.status(403).json({
+      success: false,
+      error: "UNTRUSTED_ORIGIN",
+      message: "This request origin is not allowed."
+    });
+    return;
+  }
+
   const token = readSessionCookie(request);
   if (!token) {
     response.status(401).json({
