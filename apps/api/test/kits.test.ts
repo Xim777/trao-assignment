@@ -74,6 +74,73 @@ describe("owner-scoped kit persistence routes", () => {
     });
   });
 
+  it("orders practice cards by lowest confidence and reports coverage", async () => {
+    const saved = {
+      kit: {
+        flashcards: [
+          { id: "f1", front: "First", back: "Answer 1", requirement_ids: ["r1"] },
+          { id: "f2", front: "Second", back: "Answer 2", requirement_ids: ["r2"] },
+          { id: "f3", front: "Third", back: "Answer 3", requirement_ids: ["r3"] }
+        ]
+      },
+      practiceProgress: [
+        {
+          flashcardId: "f1",
+          confidence: 5,
+          covered: true,
+          reviewCount: 2,
+          lastReviewedAt: new Date("2026-11-16T10:00:00.000Z")
+        },
+        {
+          flashcardId: "f2",
+          confidence: 2,
+          covered: true,
+          reviewCount: 1,
+          lastReviewedAt: new Date("2026-11-16T11:00:00.000Z")
+        }
+      ]
+    };
+    const lean = vi.fn().mockResolvedValue(saved);
+    vi.spyOn(KitModel, "findOne").mockReturnValue({ lean } as never);
+    await startServer();
+
+    const response = await fetch(
+      `${baseUrl}/api/kits/64b000000000000000000002/practice`,
+      { headers: { cookie: "trao_session=valid-session-token" } }
+    );
+    const body = await response.json() as {
+      cards: Array<{ id: string; confidence: number | null; covered: boolean }>;
+      total: number;
+      covered: number;
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.cards.map(card => card.id)).toEqual(["f3", "f2", "f1"]);
+    expect(body.cards[0]?.confidence).toBeNull();
+    expect(body.total).toBe(3);
+    expect(body.covered).toBe(2);
+  });
+
+  it("validates confidence updates before touching persistence", async () => {
+    const findOne = vi.spyOn(KitModel, "findOne");
+    await startServer();
+
+    const response = await fetch(
+      `${baseUrl}/api/kits/64b000000000000000000002/practice/f1`,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          cookie: "trao_session=valid-session-token"
+        },
+        body: JSON.stringify({ confidence: 6, covered: true })
+      }
+    );
+
+    expect(response.status).toBe(400);
+    expect(findOne).not.toHaveBeenCalled();
+  });
+
   it("blocks kit access when no session cookie is present", async () => {
     await startServer();
     const response = await fetch(`${baseUrl}/api/kits`);
