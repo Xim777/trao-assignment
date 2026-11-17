@@ -36,6 +36,14 @@ const SessionSchema = new Schema({
   }
 }, { timestamps: true });
 
+const PracticeProgressSchema = new Schema({
+  flashcardId: { type: String, required: true },
+  confidence: { type: Number, required: true, min: 1, max: 5 },
+  covered: { type: Boolean, required: true, default: true },
+  lastReviewedAt: { type: Date, required: true },
+  reviewCount: { type: Number, required: true, min: 1, default: 1 }
+}, { _id: false });
+
 const KitSchema = new Schema({
   userId: {
     type: Schema.Types.ObjectId,
@@ -52,6 +60,10 @@ const KitSchema = new Schema({
   kit: {
     type: Schema.Types.Mixed,
     required: true
+  },
+  practiceProgress: {
+    type: [PracticeProgressSchema],
+    default: []
   }
 }, { timestamps: true });
 
