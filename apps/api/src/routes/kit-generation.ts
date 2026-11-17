@@ -4,6 +4,7 @@ import {
   createStudySchedule,
   ExtractedRoleSchema,
   generateQuestionBank,
+  generateFlashcards,
   CompanyResearchResultSchema,
   type JsonGenerator
 } from "@prepkit/core";
