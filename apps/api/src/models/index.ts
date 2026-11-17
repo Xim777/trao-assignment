@@ -1,4 +1,6 @@
-import { model, models, Schema, Types } from "mongoose";
+import mongoose from "mongoose";
+
+const { model, models, Schema } = mongoose;
 
 const UserSchema = new Schema({
   email: {
@@ -73,4 +75,4 @@ export const UserModel = models.User ?? model("User", UserSchema);
 export const SessionModel = models.Session ?? model("Session", SessionSchema);
 export const KitModel = models.Kit ?? model("Kit", KitSchema);
 
-export type DatabaseId = Types.ObjectId;
+export type DatabaseId = mongoose.Types.ObjectId;
