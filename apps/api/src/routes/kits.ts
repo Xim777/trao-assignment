@@ -9,6 +9,14 @@ const SaveKitSchema = z.object({
   title: z.string().trim().min(1).max(200).optional()
 }).strict();
 
+interface PracticeProgressRecord {
+  flashcardId: string;
+  confidence: number;
+  covered: boolean;
+  lastReviewedAt: Date;
+  reviewCount: number;
+}
+
 function isValidId(id: string): boolean {
   return mongoose.isValidObjectId(id);
 }
@@ -100,8 +108,9 @@ export function createKitRouter(): Router {
       const cards = Array.isArray((saved.kit as { flashcards?: unknown[] }).flashcards)
         ? (saved.kit as { flashcards: Array<{ id: string; front: string; back: string; requirement_ids: string[] }> }).flashcards
         : [];
-      const progress = new Map(
-        (saved.practiceProgress ?? []).map(item => [item.flashcardId, item])
+      const progressItems = (saved.practiceProgress ?? []) as PracticeProgressRecord[];
+      const progress = new Map<string, PracticeProgressRecord>(
+        progressItems.map((item: PracticeProgressRecord) => [item.flashcardId, item])
       );
 
       const sessionCards = cards.map(card => {
@@ -180,8 +189,9 @@ export function createKitRouter(): Router {
       }
 
       const now = new Date();
-      const existing = saved.practiceProgress.find(
-        item => item.flashcardId === request.params.flashcardId
+      const practiceProgress = saved.practiceProgress as PracticeProgressRecord[];
+      const existing = practiceProgress.find(
+        (item: PracticeProgressRecord) => item.flashcardId === request.params.flashcardId
       );
 
       if (existing) {
