@@ -326,7 +326,7 @@ export async function generateQuestionBank(
 
   let passes = 1;
 
-  // Second pass: ask again only for uncovered must-have requirements.
+  // Second pass: ask again for every requirement not covered by the first draft.
   const uncovered = getUncoveredRequirements(
     requirements,
     [...questionsByKey.values()].map(item => item.draft)
