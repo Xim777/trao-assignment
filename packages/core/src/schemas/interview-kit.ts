@@ -21,7 +21,7 @@ export const RequirementSchema = z.object({
 const QuestionSchema = z.object({
   id: z.string().min(1),
 
-  requirement_ids: z.array(z.string()).min(1).min(1),
+  requirement_ids: z.array(z.string()).min(1),
 
   category: z.enum([
     "technical",
@@ -45,7 +45,7 @@ const FlashcardSchema = z.object({
 
   back: z.string().min(1),
 
-  requirement_ids: z.array(z.string())
+  requirement_ids: z.array(z.string()).min(1)
 }).strict();
 
 
@@ -60,7 +60,7 @@ const ScheduleDaySchema = z.object({
 }).strict();
 
 const ScheduleSchema = z.object({
-  days_available: z.number().int().min(1),
+  days_available: z.number().int().min(1).max(60),
 
   days: z.array(ScheduleDaySchema)
 }).strict();
