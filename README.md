@@ -78,6 +78,8 @@ Kit endpoints:
 - `GET /api/kits/:id`: retrieve one owned kit.
 - `PUT /api/kits/:id`: replace an owned kit with a validated kit.
 - `DELETE /api/kits/:id`: delete an owned kit.
+- `GET /api/kits/:id/practice`: load flashcards with covered state and lowest-confidence cards first.
+- `PATCH /api/kits/:id/practice/:flashcardId`: save a 1–5 confidence rating and covered state for an owned kit card. Review counts and timestamps are persisted.
 - `POST /api/kits/research`: run the research pipeline.
 - `POST /api/kits/extract-role`: extract role requirements.
 - `POST /api/kits/validate`: validate an Appendix A kit.
