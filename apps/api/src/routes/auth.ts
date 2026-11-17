@@ -3,12 +3,12 @@ import { z } from "zod";
 import {
   authenticateUser,
   createUserSession,
-  readFile,
   registerUser,
   revokeUserSession
 } from "../services/auth-service.js";
 import {
   readSessionCookie,
+  requireAuth,
   SESSION_COOKIE_NAME
 } from "../middleware/require-auth.js";
 
@@ -52,8 +52,12 @@ export function createAuthRouter(): Router {
       response.cookie(SESSION_COOKIE_NAME, session.token, cookieOptions());
       response.status(201).json({ success: true, user });
     } catch (error) {
-      const duplicate = error instanceof Error &&
-        (error.message.includes("already exists") || "code" in error && error.code === 11000);
+      const duplicate = (
+        error instanceof Error && error.message.includes("already exists")
+      ) || (
+        typeof error === "object" && error !== null &&
+        "code" in error && error.code === 11000
+      );
 
       response.status(duplicate ? 409 : 503).json({
         success: false,
@@ -121,6 +125,13 @@ export function createAuthRouter(): Router {
       path: "/"
     });
     response.status(200).json({ success: true });
+  });
+
+  router.get("/me", requireAuth, (request, response) => {
+    response.status(200).json({
+      success: true,
+      user: request.authUser
+    });
   });
 
   return router;
