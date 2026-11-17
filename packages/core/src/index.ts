@@ -43,3 +43,12 @@ export {
 export type {
   StudyScheduleInput
 } from "./generation/study-schedule.js";
+
+export {
+  generateQuestionBank
+} from "./generation/question-generator.js";
+
+export type {
+  QuestionGeneratorInput,
+  QuestionGenerationResult
+} from "./generation/question-generator.js";

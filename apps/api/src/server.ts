@@ -6,6 +6,9 @@ import { createTavilySearchProvider } from "./services/search/tavily-provider.js
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import {
+  createKitGenerationRouter
+} from "./routes/kit-generation.js";
 
 import {
   extractJobDescription,
@@ -223,6 +226,17 @@ app.post("/api/kits/research", async (req, res) => {
     });
   }
 });
+
+// ----------------------------------
+// Kit Generation
+// ----------------------------------
+app.use(
+  "/api/kits",
+  createKitGenerationRouter({
+    generateJson: generateWithGemini
+  })
+);
+
 // ----------------------------------
 // 404 Handler
 // ----------------------------------
