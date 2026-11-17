@@ -184,6 +184,54 @@ describe("POST /api/kits/generate", () => {
     expect(generateJson).toHaveBeenCalledTimes(5);
   });
 
+  it("returns a valid thin kit when the job description has no extractable requirements", async () => {
+    const generateJson = createGenerator();
+    await startServer(generateJson);
+
+    const thinRole = {
+      title: "Software Engineer",
+      seniority: "Not specified",
+      responsibilities: [],
+      requirements: []
+    };
+
+    const response = await fetch(`${baseUrl}/api/kits/generate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        role: thinRole,
+        companyResearch: {
+          ...companyResearch,
+          source: { ...companyResearch.source, role: "Software Engineer" }
+        },
+        daysAvailable: 2
+      })
+    });
+
+    const body = await response.json() as {
+      success: boolean;
+      kit: {
+        questions: unknown[];
+        flashcards: unknown[];
+        schedule: { days_available: number; days: Array<{ minutes: number }> };
+        coverage: { uncovered_requirement_ids: string[]; passes: number };
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(body.kit.questions).toEqual([]);
+    expect(body.kit.flashcards).toEqual([]);
+    expect(body.kit.schedule.days_available).toBe(2);
+    expect(body.kit.schedule.days).toHaveLength(2);
+    expect(body.kit.schedule.days.every(day => Number.isInteger(day.minutes))).toBe(true);
+    expect(body.kit.coverage).toEqual({
+      uncovered_requirement_ids: [],
+      passes: 1
+    });
+    expect(generateJson).not.toHaveBeenCalled();
+  });
+
   it("rejects an invalid day count before calling the LLM", async () => {
     const generateJson = createGenerator();
     await startServer(generateJson);
