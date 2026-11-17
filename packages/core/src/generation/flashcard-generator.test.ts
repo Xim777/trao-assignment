@@ -153,7 +153,7 @@ describe("generateFlashcards", () => {
     })).rejects.toThrow();
   });
 
-  it("rejects empty titles and missing requirements before calling the model", async () => {
+  it("rejects empty titles and returns no cards for missing requirements", async () => {
     const generateJson = vi.fn();
 
     await expect(generateFlashcards({
@@ -164,14 +164,15 @@ describe("generateFlashcards", () => {
       generateJson: createGenerator(generateJson)
     })).rejects.toThrow(/Role title cannot be empty/);
 
-    await expect(generateFlashcards({
+    const thinResult = await generateFlashcards({
       roleTitle: "Backend Engineer",
       requirements: [],
-      questions,
+      questions: [],
       companyBrief,
       generateJson: createGenerator(generateJson)
-    })).rejects.toThrow(/At least one role requirement/);
+    });
 
+    expect(thinResult).toEqual({ flashcards: [] });
     expect(generateJson).not.toHaveBeenCalled();
   });
 });
