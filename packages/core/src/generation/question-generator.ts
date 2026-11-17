@@ -154,16 +154,23 @@ function buildUserPrompt(input: {
   });
 }
 
-function getUncoveredMustHaveRequirements(
+function getUncoveredRequirements(
   requirements: Requirement[],
   questions: Pick<Question, "requirement_ids">[]
 ): Requirement[] {
   return requirements.filter(requirement =>
-    requirement.priority === "must" &&
     !questions.some(question =>
       question.requirement_ids.includes(requirement.id)
     )
   );
+}
+
+function getUncoveredMustHaveRequirements(
+  requirements: Requirement[],
+  questions: Pick<Question, "requirement_ids">[]
+): Requirement[] {
+  return getUncoveredRequirements(requirements, questions)
+    .filter(requirement => requirement.priority === "must");
 }
 
 function normalizePrompt(prompt: string): string {
@@ -320,7 +327,7 @@ export async function generateQuestionBank(
   let passes = 1;
 
   // Second pass: ask again only for uncovered must-have requirements.
-  const uncovered = getUncoveredMustHaveRequirements(
+  const uncovered = getUncoveredRequirements(
     requirements,
     [...questionsByKey.values()].map(item => item.draft)
   );
