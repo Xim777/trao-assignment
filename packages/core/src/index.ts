@@ -52,3 +52,12 @@ export type {
   QuestionGeneratorInput,
   QuestionGenerationResult
 } from "./generation/question-generator.js";
+
+export {
+  generateFlashcards
+} from "./generation/flashcard-generator.js";
+
+export type {
+  FlashcardGeneratorInput,
+  FlashcardGenerationResult
+} from "./generation/flashcard-generator.js";
